@@ -1,0 +1,31 @@
+name: MegaLinter
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.ref }}-megalinter
+  cancel-in-progress: true
+
+jobs:
+  megalinter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: MegaLinter
+        uses: oxsecurity/megalinter@v8
+        env:
+          MEGALINTER_FLAVOR: all
+          APPLY_FIXES: all
+          APPLY_FIXES_EVENT: push
+          APPLY_FIXES_MODE: commit
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: true
