@@ -2,6 +2,9 @@
 
 Custom status page + uptime monitoring for the oriz.in family. Replaces UptimeRobot (commercial-use ban, Oct 2024).
 
+[![Stars](https://img.shields.io/github/stars/chirag127/status?style=flat-square)](https://github.com/chirag127/status/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](./LICENSE)
+
 - **Public dashboard:** [status.oriz.in](https://status.oriz.in)
 - **API:** `https://status-api.oriz.in/api/status` · `/api/uptime?slug=<slug>&days=30`
 - **RSS:** `https://status.oriz.in/feed.xml`
