@@ -1,29 +1,70 @@
 ---
 import BaseLayout from '~/layouts/BaseLayout.astro'
 import StatusGrid from '~/components/StatusGrid.astro'
+import Watchlist from '~/components/Watchlist.tsx'
 import { TARGETS } from '~/data/targets'
 
 const totalCount = TARGETS.length
 const apiBase = import.meta.env.PUBLIC_STATUS_API_BASE ?? 'https://status-api.oriz.in'
+const channels = TARGETS.map((t) => ({ slug: t.slug, name: t.name, url: t.url }))
+// duplicate the bus run so the marquee loops seamlessly at -50%
+const busItems = [...channels, ...channels]
 ---
 <BaseLayout>
-  <main class="container">
-    <div class="hero" data-state="unknown" id="hero">
-      <div style="flex: 1;">
-        <h1 id="hero-title">Checking status…</h1>
-        <div class="sub" id="hero-sub">Loading the latest probe ·  <span id="hero-count">— of {totalCount}</span> services up · last update <span id="hero-ts">—</span></div>
+  <main class="shell">
+    <section class="annunciator" data-state="unknown" id="hero" aria-live="polite">
+      <div class="annunciator__grid">
+        <div class="annunciator__read">
+          <p class="eyebrow"><span class="lamp"></span><span id="hero-eyebrow">Acquiring signal</span></p>
+          <h1 class="headline" id="hero-title">Reading the board</h1>
+          <div class="readout">
+            <span><b id="hero-up">—</b> of {totalCount} channels nominal</span>
+            <span>probe <b id="hero-ts">—</b> IST</span>
+            <span>sweep every 5 min</span>
+          </div>
+        </div>
+        <div class="scope" aria-hidden="true">
+          <div class="scope__graticule"></div>
+          <svg class="scope__trace" viewBox="0 0 400 220" preserveAspectRatio="none">
+            <polyline id="scope-line" fill="none" stroke="var(--phosphor)" stroke-width="1.5"
+              points="0,150 30,120 60,160 90,60 120,150 150,110 180,170 210,90 240,140 270,70 300,150 330,120 360,165 400,110"
+              opacity="0.85" />
+          </svg>
+          <div class="scope__sweep"></div>
+          <span class="scope__label">live sweep · 60s poll</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="bus" aria-hidden="true">
+      <span class="bus__tag">signal bus</span>
+      <div class="bus__track">
+        <div class="bus__run">
+          {busItems.map((c) => (
+            <span><b>◆</b> {c.name}</span>
+          ))}
+        </div>
       </div>
     </div>
 
-    <StatusGrid />
+    <div class="rack">
+      <aside class="legend">
+        <h2>Signal key</h2>
+        <div class="legend__row"><span class="lamp lamp--up"></span> nominal</div>
+        <div class="legend__row"><span class="lamp lamp--degraded"></span> degraded</div>
+        <div class="legend__row"><span class="lamp lamp--down"></span> down</div>
+        <div class="legend__row"><span class="lamp lamp--unknown"></span> acquiring</div>
+      </aside>
+      <StatusGrid />
+    </div>
 
-    <footer>
+    <Watchlist client:load channels={channels} apiBase={apiBase} />
+
+    <footer class="foot">
       <div>
-        <strong>oriz / status</strong> · <a href="/feed.xml">RSS</a> · <a href="https://github.com/oriz-co/oriz-status-app">source</a>
+        <strong>oriz / status</strong> · <a href="/feed.xml">RSS</a> · <a href="https://github.com/chirag127/oriz-status">source</a>
       </div>
-      <div>
-        Probes every 5 min · cached 60 sec · all times IST
-      </div>
+      <div>Probes every 5 min · cached 60 s · all times IST</div>
     </footer>
   </main>
 
@@ -32,9 +73,7 @@ const apiBase = import.meta.env.PUBLIC_STATUS_API_BASE ?? 'https://status-api.or
     const fmtTs = (ts) => {
       if (!ts) return '—'
       const d = new Date(ts)
-      const hh = String(d.getHours()).padStart(2, '0')
-      const mm = String(d.getMinutes()).padStart(2, '0')
-      return hh + ':' + mm
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
     }
 
     async function refresh() {
@@ -43,31 +82,28 @@ const apiBase = import.meta.env.PUBLIC_STATUS_API_BASE ?? 'https://status-api.or
         if (!res.ok) throw new Error('http ' + res.status)
         const data = await res.json()
         if (!data || !Array.isArray(data.services)) return
-        let upCount = 0
-        let downCount = 0
+        let up = 0, down = 0
         for (const s of data.services) {
           const el = document.querySelector('[data-slug="' + s.slug + '"]')
           if (!el) continue
-          const dot = el.querySelector('.dot')
-          const ms = el.querySelector('[data-ms]')
-          dot.classList.remove('pulse', 'up', 'degraded', 'down')
-          if (s.status === 'up') { dot.classList.add('up'); upCount++ }
-          else if (s.status === 'degraded') { dot.classList.add('degraded') }
-          else { dot.classList.add('down'); downCount++ }
-          ms.textContent = fmtMs(s.ms)
+          const lamp = el.querySelector('.lamp')
+          const lat = el.querySelector('[data-ms]')
+          lamp.classList.remove('pulse')
+          const st = s.status === 'up' ? 'up' : s.status === 'degraded' ? 'degraded' : 'down'
+          el.dataset.status = st
+          if (st === 'up') up++
+          else if (st === 'down') down++
+          lat.textContent = fmtMs(s.ms)
         }
         const total = document.querySelectorAll('[data-slug]').length
         const hero = document.getElementById('hero')
+        const eyebrow = document.getElementById('hero-eyebrow')
         const title = document.getElementById('hero-title')
-        const sub = document.getElementById('hero-sub')
-        const count = document.getElementById('hero-count')
-        const ts = document.getElementById('hero-ts')
-        if (downCount === 0) { hero.dataset.state = 'up'; title.textContent = 'All systems operational' }
-        else if (downCount < total / 4) { hero.dataset.state = 'degraded'; title.textContent = 'Partial outage' }
-        else { hero.dataset.state = 'down'; title.textContent = 'Major outage' }
-        count.textContent = upCount + ' of ' + total
-        ts.textContent = fmtTs(data.at)
-        sub.innerHTML = 'Latest probe · <strong>' + upCount + ' of ' + total + '</strong> services up · last update <span>' + fmtTs(data.at) + '</span>'
+        if (down === 0) { hero.dataset.state = 'up'; eyebrow.textContent = 'All channels nominal'; title.textContent = 'Signal clean' }
+        else if (down < total / 4) { hero.dataset.state = 'degraded'; eyebrow.textContent = 'Partial signal loss'; title.textContent = 'Degraded' }
+        else { hero.dataset.state = 'down'; eyebrow.textContent = 'Signal fault'; title.textContent = 'Fault on the board' }
+        document.getElementById('hero-up').textContent = up
+        document.getElementById('hero-ts').textContent = fmtTs(data.at)
       } catch (e) {
         console.warn('status fetch failed', e)
       }

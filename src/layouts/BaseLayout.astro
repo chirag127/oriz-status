@@ -1,13 +1,15 @@
 ---
 import '~/styles/global.css'
+import Wordmark from '~/components/Wordmark.astro'
+import AuthButton from '~/components/auth/AuthButton.tsx'
 
 interface Props {
   title?: string
   description?: string
 }
 const {
-  title = 'oriz / status — all systems status',
-  description = 'Real-time status + 90-day uptime history for every site in the oriz.in family.',
+  title = 'oriz / status — signal console',
+  description = 'Live signal console for the oriz.in family — every site and API on one annunciator panel, probed every 5 minutes.',
 } = Astro.props
 ---
 <!doctype html>
@@ -18,7 +20,7 @@ const {
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={`https://status.oriz.in${Astro.url.pathname}`} />
-    <meta name="theme-color" content="#0b1220" />
+    <meta name="theme-color" content="#0e1a1c" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
@@ -27,6 +29,15 @@ const {
     <link rel="preconnect" href="https://status-api.oriz.in" crossorigin />
   </head>
   <body>
+    <header class="console-bar">
+      <div class="console-bar__inner">
+        <Wordmark />
+        <div class="console-bar__meta">
+          <span class="sep">status console</span>
+          <span class="auth-slot"><AuthButton client:load /></span>
+        </div>
+      </div>
+    </header>
     <slot />
   </body>
 </html>
