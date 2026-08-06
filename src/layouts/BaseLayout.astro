@@ -6,10 +6,12 @@ import AuthButton from '~/components/auth/AuthButton.tsx'
 interface Props {
   title?: string
   description?: string
+  showAuth?: boolean
 }
 const {
   title = 'oriz / status — signal console',
   description = 'Live signal console for the oriz.in family — every site and API on one annunciator panel, probed every 5 minutes.',
+  showAuth = true,
 } = Astro.props
 ---
 <!doctype html>
@@ -34,7 +36,7 @@ const {
         <Wordmark />
         <div class="console-bar__meta">
           <span class="sep">status console</span>
-          <span class="auth-slot"><AuthButton client:load /></span>
+          {showAuth && <span class="auth-slot"><AuthButton client:load /></span>}
         </div>
       </div>
     </header>
