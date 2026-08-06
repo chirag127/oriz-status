@@ -142,6 +142,11 @@ a { color: inherit; text-decoration: none; }
   margin: 0 auto;
   padding: 40px 24px 96px;
 }
+.readout .tally .stat { display: flex; flex-direction: column; gap: 3px; }
+.readout .tally .stat .k { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim); }
+.readout .tally .stat .v { font-size: 20px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+.readout .tally .stat .v.up { color: var(--sig-up); }
+.readout .tally .stat .v.dn { color: var(--sig-dn); }
 
 /* ── HERO: annunciator + oscilloscope sweep ───────────────── */
 .annunciator {

@@ -45,7 +45,7 @@ const busItems = [...channels, ...channels]
           ))}
         </div>
       </div>
-    </div>
+    </section>
 
     <div class="rack">
       <aside class="legend">
@@ -66,15 +66,37 @@ const busItems = [...channels, ...channels]
       </div>
       <div>Probes every 5 min · cached 60 s · all times IST</div>
     </footer>
-  </main>
+  </div>
 
   <script is:inline define:vars={{ apiBase }}>
     const fmtMs = (ms) => (ms == null ? '—' : ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(2) + 's')
+    const pad = (n) => String(n).padStart(2, '0')
     const fmtTs = (ts) => {
-      if (!ts) return '—'
+      if (!ts) return '--:--'
       const d = new Date(ts)
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
     }
+
+    // rolling latency buffer per slug → sparkline
+    const history = {}
+    const spark = (slug, ms) => {
+      const buf = (history[slug] ||= [])
+      buf.push(ms == null ? 0 : ms)
+      if (buf.length > 12) buf.shift()
+      const max = Math.max(200, ...buf)
+      const step = 60 / Math.max(1, buf.length - 1)
+      return buf
+        .map((v, i) => (i * step).toFixed(1) + ',' + (16 - (v / max) * 14).toFixed(1))
+        .join(' ')
+    }
+
+    const clockT = document.getElementById('clock-t')
+    const tickClock = () => {
+      const d = new Date()
+      clockT.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+    }
+    tickClock()
+    setInterval(tickClock, 1000)
 
     async function refresh() {
       try {
@@ -105,7 +127,9 @@ const busItems = [...channels, ...channels]
         document.getElementById('hero-up').textContent = up
         document.getElementById('hero-ts').textContent = fmtTs(data.at)
       } catch (e) {
-        console.warn('status fetch failed', e)
+        console.warn('signal fetch failed', e)
+        document.getElementById('verdict').textContent = 'Signal lost'
+        document.getElementById('readout').dataset.state = 'down'
       }
     }
 

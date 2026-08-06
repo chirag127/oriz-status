@@ -6,7 +6,9 @@
   "description": "Custom status page + uptime monitoring for the oriz.in family. CF Worker cron + KV + Astro static. Replaces UptimeRobot.",
   "license": "MIT",
   "packageManager": "pnpm@10.34.3",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
