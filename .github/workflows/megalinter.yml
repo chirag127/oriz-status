@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: MegaLinter
-        uses: oxsecurity/megalinter@v8
+        uses: oxsecurity/megalinter@v10
         env:
           MEGALINTER_FLAVOR: all
           APPLY_FIXES: all
