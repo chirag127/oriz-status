@@ -21,24 +21,24 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@astrojs/react": "^6.0.2",
+    "@astrojs/react": "^7.1.1",
     "@clerk/clerk-react": "^5.61.3",
     "@fontsource-variable/hanken-grotesk": "^5.3.0",
     "@fontsource-variable/martian-mono": "^5.3.0",
     "@fontsource-variable/space-grotesk": "^5.3.0",
-    "astro": "^6.4.7",
-    "firebase": "^12.17.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "astro": "^7.4.2",
+    "firebase": "^13.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.0",
-    "@cloudflare/workers-types": "^5.20260730.1",
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.102.0"
+    "@astrojs/check": "^0.9.12",
+    "@cloudflare/workers-types": "^5.20261026.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.152.0"
   }
 }
