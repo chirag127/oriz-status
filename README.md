@@ -1,39 +1,142 @@
-# oriz-status-app
+# oriz-status
 
-Custom status page + uptime monitoring for the oriz.in family. Replaces UptimeRobot (commercial-use ban, Oct 2024).
+**Custom uptime + status page for the oriz.in fleet — Cloudflare Workers cron + KV, Astro static front-end.**
 
-[![Stars](https://img.shields.io/github/stars/chirag127/status?style=flat-square)](https://github.com/chirag127/status/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/chirag127/oriz-status?style=flat)](https://github.com/chirag127/oriz-status/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/chirag127/oriz-status)](https://github.com/chirag127/oriz-status/commits)
+[![Astro](https://img.shields.io/badge/astro-6-ff5d01)](https://astro.build/)
+[![Deploy](https://github.com/chirag127/oriz-status/actions/workflows/deploy.yml/badge.svg)](https://github.com/chirag127/oriz-status/actions/workflows/deploy.yml)
 
-- **Public dashboard:** [status.oriz.in](https://status.oriz.in)
-- **API:** `https://status-api.oriz.in/api/status` · `/api/uptime?slug=<slug>&days=30`
-- **RSS:** `https://status.oriz.in/feed.xml`
+A self-hosted status page and uptime monitor for the ~80-site oriz.in family, built to
+replace UptimeRobot after its commercial-use ban. A Cloudflare Worker cron HEAD-pings
+every app, API and the apex domain on a schedule, rolls results into KV, and a second
+Worker serves the aggregated status/uptime as JSON. An Astro static site renders the
+public dashboard.
+
+- **Live site:** https://status.oriz.in
+- **GH Pages landing:** https://chirag127.github.io/oriz-status/
+- **Repo:** https://github.com/chirag127/oriz-status
+
+⭐ If this is useful, please **star the repo** — it helps others find it.
 
 ## Architecture
 
-- **Frontend** — Astro static site on CF Pages. Fetches `/api/status` client-side every 60 sec.
-- **Backend** — two CF Workers:
-  - `oriz-status-ping` — cron every 5 min. HEAD-pings every URL in `FAMILY_*` registries + master apex. Writes latest + rolls up daily history into KV. Telegram alert on status change.
-  - `oriz-status-api` — serves `/api/status`, `/api/uptime`, `/api/incidents` from KV with 60 sec edge cache.
-- **KV** — single namespace `STATUS_KV`. Keys: `latest`, `history:YYYY-MM-DD` (90-day TTL), `previous`, `incidents` (last 50, JSON array).
+```mermaid
+flowchart LR
+  T["Targets registry<br/>(apps · APIs · apex)"] --> PC["ping worker (cron 5 min)<br/>HEAD every URL"]
+  PC --> KV["Cloudflare KV<br/>latest · history:YYYY-MM-DD · incidents"]
+  PC -. status change .-> TG["Telegram alert"]
+  KV --> API["status-api worker<br/>/api/status · /api/uptime · /api/incidents"]
+  API --> SITE["Astro dashboard<br/>status.oriz.in (polls every 60s)"]
+```
 
-## Free-tier math
+## Features
 
-26 apps + 19 APIs + 14 packages + 5 books + master = ~65 fetches per cron tick.
-288 ticks/day × 65 = **18,720 outbound fetches/day** — comfortable under the Workers Free 100K/day limit.
+- **5-minute cron probe** — HEAD-pings every target (apps + APIs + apex); records
+  latest state and rolls daily history into KV.
+- **Status API** — `/api/status`, `/api/uptime?slug=<slug>&days=30`, `/api/incidents`
+  served from KV with edge caching.
+- **Public dashboard** — Astro static site, auto-refreshes client-side every 60s;
+  RSS feed at `/feed.xml`.
+- **Incident tracking** — last 50 incidents kept in KV; Telegram alert on any status
+  change.
+- **Optional watchlist** — Clerk SSO gates only a personal watchlist; the public
+  status page needs no login.
 
-## Deploy
+## Tech stack
+
+- [Astro 6](https://astro.build/) static + [React 19](https://react.dev/) islands
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/) (cron + API) + KV
+- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) for deploys
+- Fonts via `@fontsource-variable/*`; optional [Clerk](https://clerk.com/) +
+  [Firebase](https://firebase.google.com/) Firestore for the watchlist
+- Package manager: pnpm 10 (Node ≥ 22)
+
+## Repo structure
+
+```
+oriz-status/
+├─ src/                       # Astro dashboard
+│  ├─ pages/                 #   public status page
+│  ├─ components/             #   status UI
+│  └─ lib/siteConfig.ts       #   site config
+├─ workers/                   # Cloudflare Workers
+│  ├─ ping-cron.ts            #   5-min cron: HEAD-ping targets → KV, alert on change
+│  ├─ status-api.ts           #   /api/status · /api/uptime · /api/incidents
+│  ├─ targets.ts              #   the monitored URL registry
+│  ├─ wrangler.ping.toml       #   ping worker config
+│  └─ wrangler.api.toml        #   api worker config
+├─ package.json
+└─ .github/workflows/         # deploy.yml · megalinter.yml
+```
+
+## Screenshots
+
+_Live status board at [status.oriz.in](https://status.oriz.in)._
+
+> _Screenshot placeholder — add `public/screenshot.png` once captured._
+
+## Quick start
 
 ```bash
 pnpm install
-pnpm build
-pnpm deploy:pages        # Astro → CF Pages
-pnpm deploy:worker:ping  # cron worker
-pnpm deploy:worker:api   # API worker
+pnpm dev                    # local dev server (astro dev)
+pnpm build                  # static build → dist/
+pnpm deploy:pages           # deploy dashboard → Cloudflare Pages
+pnpm deploy:worker:ping     # deploy the cron ping worker
+pnpm deploy:worker:api      # deploy the status API worker
+pnpm deploy:all             # build + all three
 ```
 
-DNS (added via Cloudflare API in master `scripts/`):
-- `status.oriz.in` CNAME → CF Pages
-- `status-api.oriz.in` CNAME → workers.dev route
+> On Windows, if a pnpm build fails on the esbuild binary, use
+> `npm install --legacy-peer-deps && npm run build`.
 
-See [`knowledge/decisions/architecture/oriz-status-app.md`](https://github.com/oriz-co/oriz/blob/main/knowledge/decisions/architecture/oriz-status-app.md) for the full rationale.
+## API reference
+
+Served by the `status-api` worker (base `https://status-api.oriz.in`):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/status` | Current state of every monitored target |
+| `GET /api/uptime?slug=<slug>&days=30` | Rolling uptime history for one target |
+| `GET /api/incidents` | Recent incidents (last 50) |
+
+## Configuration
+
+Public, client-exposed env vars only (`PUBLIC_*`). Names + purpose — **never commit values**:
+
+| Variable | Purpose |
+|---|---|
+| `PUBLIC_STATUS_API_BASE` | Base URL of the status API worker |
+| `PUBLIC_BASE_PATH` | Astro base path (subpath deploys) |
+| `PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (watchlist SSO) |
+| `PUBLIC_FIREBASE_API_KEY` | Firebase web API key (Firestore only) |
+| `PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
+| `PUBLIC_FIREBASE_PROJECT_ID` | Firebase project id |
+| `PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
+| `PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender id |
+| `PUBLIC_FIREBASE_APP_ID` | Firebase app id |
+
+Worker secrets (KV bindings, Telegram token) live in Wrangler/CF secrets and a
+sops + age vault — never in the repo. No `PUBLIC_*_SECRET`.
+
+## Part of the oriz family
+
+One of ~80 sites in the [oriz](https://blog.oriz.in) family — a solo-run fleet of
+finance tools, blogs, and utilities. It runs **$0 on the Cloudflare free tier**:
+~65 fetches per 5-minute tick × 288 ticks/day ≈ 18.7k outbound fetches/day, well under
+the Workers Free 100k/day limit.
+
+## Contributing
+
+Issues and PRs welcome. Conventional commits — they **are** the changelog.
+
+## License
+
+MIT © Chirag Singhal — chirag@oriz.in
+
+## Status / roadmap
+
+Production — replaced UptimeRobot for the fleet. Roadmap: latency percentiles,
+public incident timeline, per-target SLA badges.

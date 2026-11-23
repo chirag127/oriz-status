@@ -60,6 +60,52 @@ interface StatusBlob {
 const TIMEOUT_MS = 8000
 const HISTORY_DAYS = 90
 const INCIDENTS_CAP = 50
+const DEGRADED_MS = 3000
+
+/** Classify a probe outcome from the response ok-ness and round-trip latency. */
+export function classify(ok: boolean, ms: number): ProbeResult['status'] {
+  return ok ? (ms > DEGRADED_MS ? 'degraded' : 'up') : 'down'
+}
+
+/** Detect status transitions by diffing the current snapshot against the previous. */
+export function detectTransitions(
+  current: ProbeResult[],
+  previous: ProbeResult[],
+  at: number,
+): Transition[] {
+  const prevBySlug = new Map(previous.map(s => [s.slug, s]))
+  const transitions: Transition[] = []
+  for (const s of current) {
+    const before = prevBySlug.get(s.slug)
+    if (before && before.status !== s.status) {
+      transitions.push({ slug: s.slug, name: s.name, from: before.status, to: s.status, at, code: s.code })
+    }
+  }
+  return transitions
+}
+
+/**
+ * Fold the current tick's probes into the given day's rollup. `up`/`degraded`
+ * both count as "up" for availability; only `down` counts against it. Mutates
+ * and returns the day rollup (matching the Worker's in-place accumulation).
+ */
+export function rollupDay(day: DayRollup, results: ProbeResult[]): DayRollup {
+  for (const r of results) {
+    const slot = day[r.slug] ?? { up: 0, down: 0, total: 0 }
+    slot.total++
+    if (r.status === 'up' || r.status === 'degraded') slot.up++
+    else slot.down++
+    day[r.slug] = slot
+  }
+  return day
+}
+
+/** Cap the incidents log at INCIDENTS_CAP, newest first. */
+export function mergeIncidents(transitions: Transition[], previous: Transition[]): Transition[] {
+  return transitions.length > 0
+    ? [...transitions, ...previous].slice(0, INCIDENTS_CAP)
+    : previous
+}
 
 async function probe(t: typeof TARGETS[number]): Promise<ProbeResult> {
   const start = Date.now()
@@ -78,7 +124,7 @@ async function probe(t: typeof TARGETS[number]): Promise<ProbeResult> {
     }
     clearTimeout(timer)
     const ms = Date.now() - start
-    const status: ProbeResult['status'] = r.ok ? (ms > 3000 ? 'degraded' : 'up') : 'down'
+    const status: ProbeResult['status'] = classify(r.ok, ms)
     return { slug: t.slug, name: t.name, url: t.url, category: t.category, status, code: r.status, ms, ts: Date.now() }
   } catch (e) {
     clearTimeout(timer)
@@ -104,7 +150,7 @@ async function telegramAlert(env: Env, text: string): Promise<void> {
   }
 }
 
-function pruneHistory(history: Record<string, DayRollup>, today: string): Record<string, DayRollup> {
+export function pruneHistory(history: Record<string, DayRollup>, today: string): Record<string, DayRollup> {
   // Keep only the most recent HISTORY_DAYS days (lex order works for YYYY-MM-DD).
   const cutoff = new Date(today + 'T00:00:00Z')
   cutoff.setUTCDate(cutoff.getUTCDate() - (HISTORY_DAYS - 1))
@@ -136,35 +182,16 @@ export default {
 
     // Diff against previous snapshot for incident detection.
     const prevServices = prevBlob?.services ?? []
-    const prevBySlug = new Map(prevServices.map(s => [s.slug, s]))
-
-    const transitions: Transition[] = []
-    for (const s of all) {
-      const before = prevBySlug.get(s.slug)
-      if (before && before.status !== s.status) {
-        transitions.push({ slug: s.slug, name: s.name, from: before.status, to: s.status, at: now, code: s.code })
-      }
-    }
+    const transitions = detectTransitions(all, prevServices, now)
 
     // Daily rollup (in-memory, pruned to last 90 days).
     const day = new Date(now).toISOString().slice(0, 10)
     const history = prevBlob?.history ?? {}
-    const today: DayRollup = history[day] ?? {}
-    for (const r of all) {
-      const slot = today[r.slug] ?? { up: 0, down: 0, total: 0 }
-      slot.total++
-      if (r.status === 'up' || r.status === 'degraded') slot.up++
-      else slot.down++
-      today[r.slug] = slot
-    }
-    history[day] = today
+    history[day] = rollupDay(history[day] ?? {}, all)
     const prunedHistory = pruneHistory(history, day)
 
     // Incidents log (capped 50).
-    const prevIncidents = prevBlob?.incidents ?? []
-    const incidents = transitions.length > 0
-      ? [...transitions, ...prevIncidents].slice(0, INCIDENTS_CAP)
-      : prevIncidents
+    const incidents = mergeIncidents(transitions, prevBlob?.incidents ?? [])
 
     // Telegram alert (out-of-band, doesn't gate the write).
     if (transitions.length > 0) {
