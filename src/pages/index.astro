@@ -90,13 +90,6 @@ const busItems = [...channels, ...channels]
         .join(' ')
     }
 
-    const clockT = document.getElementById('clock-t')
-    const tickClock = () => {
-      const d = new Date()
-      clockT.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
-    }
-    tickClock()
-    setInterval(tickClock, 1000)
 
     async function refresh() {
       try {
