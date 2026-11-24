@@ -45,7 +45,7 @@ const busItems = [...channels, ...channels]
           ))}
         </div>
       </div>
-    </section>
+    </div>
 
     <div class="rack">
       <aside class="legend">
@@ -66,7 +66,7 @@ const busItems = [...channels, ...channels]
       </div>
       <div>Probes every 5 min · cached 60 s · all times IST</div>
     </footer>
-  </div>
+  </main>
 
   <script is:inline define:vars={{ apiBase }}>
     const fmtMs = (ms) => (ms == null ? '—' : ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(2) + 's')
@@ -90,13 +90,6 @@ const busItems = [...channels, ...channels]
         .join(' ')
     }
 
-    const clockT = document.getElementById('clock-t')
-    const tickClock = () => {
-      const d = new Date()
-      clockT.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
-    }
-    tickClock()
-    setInterval(tickClock, 1000)
 
     async function refresh() {
       try {
@@ -128,8 +121,9 @@ const busItems = [...channels, ...channels]
         document.getElementById('hero-ts').textContent = fmtTs(data.at)
       } catch (e) {
         console.warn('signal fetch failed', e)
-        document.getElementById('verdict').textContent = 'Signal lost'
-        document.getElementById('readout').dataset.state = 'down'
+        document.getElementById('hero-title').textContent = 'Signal lost'
+        document.getElementById('hero-eyebrow').textContent = 'Unable to acquire signal'
+        document.getElementById('hero').dataset.state = 'unknown'
       }
     }
 
