@@ -48,6 +48,81 @@ interface StatusBlob {
   incidents: Transition[]
 }
 
+export interface UptimeReport {
+  slug: string
+  days: number
+  uptime: number | null
+  samples: number
+  daily: { day: string; up: number; total: number; pct: number | null }[]
+}
+
+/** Clamp the `days` query param into the supported 1..90 window. */
+export function clampDays(raw: string | null): number {
+  return Math.min(90, Math.max(1, Number(raw ?? '30')))
+}
+
+/**
+ * Pure uptime computation: walk back `days` days from `now`, summing the
+ * per-slug daily rollups into an overall uptime % plus a per-day series.
+ * Extracted from the Worker so it is unit-testable without KV/edge runtime.
+ */
+export function computeUptime(
+  history: Record<string, DayRollup>,
+  slug: string,
+  days: number,
+  now: Date = new Date(),
+): UptimeReport {
+  let upTotal = 0
+  let total = 0
+  const daily: UptimeReport['daily'] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now)
+    d.setUTCDate(d.getUTCDate() - i)
+    const day = d.toISOString().slice(0, 10)
+    const parsed = history[day]
+    if (!parsed) { daily.push({ day, up: 0, total: 0, pct: null }); continue }
+    const slot = parsed[slug]
+    if (!slot) { daily.push({ day, up: 0, total: 0, pct: null }); continue }
+    upTotal += slot.up
+    total += slot.total
+    daily.push({ day, up: slot.up, total: slot.total, pct: slot.total ? +(slot.up * 100 / slot.total).toFixed(2) : null })
+  }
+  return { slug, days, uptime: total ? +(upTotal * 100 / total).toFixed(3) : null, samples: total, daily }
+}
+
+/** Escape the five XML predefined entities so titles/descriptions stay well-formed. */
+export function escapeXml(s: string): string {
+  return s.replace(/[<>&'"]/g, (c) =>
+    c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : c === "'" ? '&apos;' : '&quot;')
+}
+
+/** Pure RSS 2.0 body builder for the incidents feed. */
+export function buildRssXml(incidents: Transition[]): string {
+  const items = incidents.map(t => {
+    const title = escapeXml(`${t.name} ${t.from} → ${t.to}`)
+    const desc = escapeXml(`${t.name} transitioned from ${t.from} to ${t.to}${t.code ? ` (HTTP ${t.code})` : ''}`)
+    const pubDate = new Date(t.at).toUTCString()
+    const guid = `${t.slug}-${t.at}`
+    return `    <item>
+      <title>${title}</title>
+      <link>https://status.oriz.in/#${t.slug}</link>
+      <description>${desc}</description>
+      <pubDate>${pubDate}</pubDate>
+      <guid isPermaLink="false">${guid}</guid>
+    </item>`
+  }).join('\n')
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>oriz / status incidents</title>
+    <link>https://status.oriz.in</link>
+    <description>Status transitions across the oriz.in family</description>
+    <language>en</language>
+${items}
+  </channel>
+</rss>`
+}
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -69,50 +144,11 @@ async function readBlob(env: Env): Promise<StatusBlob | null> {
 }
 
 function uptimeFromHistory(history: Record<string, DayRollup>, slug: string, days: number): Response {
-  const now = new Date()
-  let upTotal = 0
-  let total = 0
-  const daily: { day: string; up: number; total: number; pct: number | null }[] = []
-  for (let i = 0; i < days; i++) {
-    const d = new Date(now)
-    d.setUTCDate(d.getUTCDate() - i)
-    const day = d.toISOString().slice(0, 10)
-    const parsed = history[day]
-    if (!parsed) { daily.push({ day, up: 0, total: 0, pct: null }); continue }
-    const slot = parsed[slug]
-    if (!slot) { daily.push({ day, up: 0, total: 0, pct: null }); continue }
-    upTotal += slot.up
-    total += slot.total
-    daily.push({ day, up: slot.up, total: slot.total, pct: slot.total ? +(slot.up * 100 / slot.total).toFixed(2) : null })
-  }
-  return json({ slug, days, uptime: total ? +(upTotal * 100 / total).toFixed(3) : null, samples: total, daily })
+  return json(computeUptime(history, slug, days))
 }
 
 function rss(incidents: Transition[]): Response {
-  const items = incidents.map(t => {
-    const title = `${t.name} ${t.from} → ${t.to}`
-    const desc = `${t.name} transitioned from ${t.from} to ${t.to}${t.code ? ` (HTTP ${t.code})` : ''}`
-    const pubDate = new Date(t.at).toUTCString()
-    const guid = `${t.slug}-${t.at}`
-    return `    <item>
-      <title>${title}</title>
-      <link>https://status.oriz.in/#${t.slug}</link>
-      <description>${desc}</description>
-      <pubDate>${pubDate}</pubDate>
-      <guid isPermaLink="false">${guid}</guid>
-    </item>`
-  }).join('\n')
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>oriz / status incidents</title>
-    <link>https://status.oriz.in</link>
-    <description>Status transitions across the oriz.in family</description>
-    <language>en</language>
-${items}
-  </channel>
-</rss>`
-  return new Response(body, {
+  return new Response(buildRssXml(incidents), {
     headers: {
       ...CORS,
       'Content-Type': 'application/rss+xml; charset=utf-8',
@@ -135,7 +171,7 @@ export default {
 
     if (url.pathname === '/api/uptime') {
       const slug = url.searchParams.get('slug')
-      const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') ?? '30')))
+      const days = clampDays(url.searchParams.get('days'))
       if (!slug) return json({ error: 'slug required' }, 0)
       const blob = await readBlob(env)
       return uptimeFromHistory(blob?.history ?? {}, slug, days)
